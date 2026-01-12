@@ -1,0 +1,676 @@
+<script>
+(function () {
+  "use strict";
+
+  // === KONFIGURACJA ===
+  var ChatWidgetConfig = {
+    webhook: {
+      url: "https://workflower.fallowdeer.pl/webhook/152442f2-6231-4e0d-87a0-12cd26b4e388",
+      route: "general"
+    },
+    style: {
+      primaryColor: "#ca6695",
+      secondaryColor: "#393939",
+      backgroundColor: "#ffffff",
+      fontColor: "#2a2a2a",
+      position: "right" // right | left
+    },
+    uiText: {
+      header: "Doradca AI",
+      welcome: "Cześć, jestem doradcą Colors of Design! Jak mogę Ci dzisiaj pomóc?",
+      inputPlaceholder: "Napisz wiadomość...",
+      btnSend: "Wyślij",
+      btnOpenAria: "Otwórz czat",
+      btnCloseAria: "Zamknij czat",
+      btnProduct: "Sprawdź",
+      reasonLabel: "Dlaczego ten produkt:",
+      bubble: "Chętnie pomogę!"
+    }
+  };
+
+  // === STYLE ===
+  var css = `
+    :root{
+      --app-height:100%;
+      --chat-primary:${ChatWidgetConfig.style.primaryColor};
+      --chat-secondary:${ChatWidgetConfig.style.secondaryColor};
+      --chat-white:#fff;
+      --chat-text:${ChatWidgetConfig.style.fontColor};
+      --chat-border:#e7e7e9;
+      --chip:#f3f3f4;
+      --shadow:0 6px 18px rgba(0,0,0,.12);
+      --radius:14px;
+      --radius-sm:10px;
+      --radius-xs:8px;
+    }
+    .cw-root{font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    .cw-reset{box-sizing:border-box;margin:0;padding:0}
+    #chat-widget-button{
+      position:fixed; bottom:20px; ${ChatWidgetConfig.style.position==="left"?"left:20px;":"right:20px;"}
+      background:var(--chat-primary); color:var(--chat-white); border:none;
+      width:50px; height:50px; border-radius:50%; cursor:pointer; z-index:100001;
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:0 4px 6px rgba(0,0,0,.2);
+    }
+    #chat-widget-button svg{width:26px;height:26px;stroke:#fff;transition:transform .2s ease}
+    #chat-widget-button:hover svg{transform:scale(1.06)}
+    /* Dymek przy zamkniętym czacie */
+    #chat-widget-bubble{
+      position:fixed;
+      bottom:82px; /* nad przyciskiem */
+      ${ChatWidgetConfig.style.position==="left"?"left:20px;":"right:20px;"}
+
+      max-width:240px;
+      padding:10px 14px;
+
+      background:${ChatWidgetConfig.style.backgroundColor};
+      color:var(--chat-primary);
+
+      border:2px solid var(--chat-primary);
+      border-radius:999px;
+
+      font-size:14px;
+      font-weight:700;
+      line-height:1.2;
+
+      display:flex;
+      align-items:center;
+      justify-content:center;
+
+      box-shadow:0 4px 10px rgba(0,0,0,.15);
+      z-index:100001;
+
+      cursor:pointer;
+      user-select:none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #chat-widget-bubble::after{
+      content:"";
+      position:absolute;
+      bottom:-10px;
+      ${ChatWidgetConfig.style.position==="left"?"left:32px;":"right:32px;"}
+      width:18px;
+      height:18px;
+      background:${ChatWidgetConfig.style.backgroundColor};
+      border-right:2px solid var(--chat-primary);
+      border-bottom:2px solid var(--chat-primary);
+      transform:rotate(45deg);
+      border-bottom-right-radius:4px;
+    }
+    #chat-widget-container{
+      position:fixed; bottom:20px; ${ChatWidgetConfig.style.position==="left"?"left:20px;":"right:20px;"}
+      width:350px; height:500px; background:${ChatWidgetConfig.style.backgroundColor};
+      border-radius:var(--radius); box-shadow:var(--shadow); display:none; flex-direction:column;
+      z-index:100000; overflow:hidden; transition:all .3s ease-in-out;
+    }
+    @media (max-width:768px){
+      #chat-widget-container.mobile-fullscreen{
+        width:100vw !important; height:var(--app-height) !important; top:0 !important;
+        left:0 !important; right:0 !important; bottom:0 !important; border-radius:0 !important;
+      }
+    }
+    #chat-widget-header{
+      background:var(--chat-primary); color:var(--chat-white); padding:16px 18px;
+      font-weight:600; display:flex; justify-content:space-between; align-items:center; font-size:16px;
+    }
+    #chat-widget-close-button{
+      background:none; border:none; color:var(--chat-white); font-size:18px; cursor:pointer; line-height:1;
+    }
+    #chat-widget-body{
+      flex:1; padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px;
+      color:var(--chat-text);
+    }
+    .user-message{
+      align-self:flex-end; background:var(--chip); color:var(--chat-text); border-radius:var(--radius-xs);
+      padding:10px 12px; max-width:80%; font-size:14px;
+    }
+    .bot-message{
+      align-self:flex-start; background:var(--chat-primary); color:var(--chat-white);
+      border-radius:var(--radius-xs); padding:12px; max-width:100%; font-size:14px;
+    }
+    .bot-message a{color:#fff; text-decoration:underline}
+    #chat-widget-footer{
+      padding:12px; border-top:1px solid var(--chat-border); display:flex; gap:8px;
+    }
+    #chat-widget-input{
+      flex:1;
+      padding:8px;
+      border:1px solid var(--chat-border);
+      border-radius:var(--radius-xs);
+      outline:none;
+      font-size:16px;              /* <<< kluczowe dla iOS */
+      transform: scale(0.9);   /* wizualnie mniejsze */
+      transform-origin: left center;
+    }
+    #chat-widget-send{
+      background:var(--chat-primary);
+      color:var(--chat-white);
+      border:none;
+      padding:8px 14px;
+      border-radius:var(--radius-xs);
+      cursor:pointer;
+      font-weight:600;
+      font-size:16px;              /* też warto */
+    }
+    .typing-indicator{display:flex; align-items:center; gap:4px; align-self:flex-start}
+    .typing-indicator .dot{width:8px; height:8px; border-radius:50%; background:var(--chat-secondary);
+      animation:bounce 1.4s infinite ease-in-out}
+    .typing-indicator .dot:nth-child(2){animation-delay:.2s}
+    .typing-indicator .dot:nth-child(3){animation-delay:.4s}
+    @keyframes bounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}
+    .product-card{
+      border:1px solid var(--chat-border); border-radius:var(--radius-sm); padding:12px; background:#fff; color:var(--chat-text);
+      box-shadow:0 2px 6px rgba(0,0,0,.06); display:flex; flex-direction:column; gap:10px; margin-bottom:5px;
+    }
+    .product-top{display:flex; gap:12px; align-items:flex-start}
+    .product-image{width:80px; height:80px; object-fit:cover; border-radius:var(--radius-xs); border:1px solid var(--chat-border); flex-shrink:0}
+    .product-info{flex:1; display:flex; flex-direction:column; gap:6px}
+    .product-title{font-weight:600; font-size:15px; line-height:1.3}
+    .product-price{font-size:14px; font-weight:500; color:var(--chat-secondary)}
+    .product-button{
+      margin-top:auto; padding:8px 12px; border:none; background:var(--chat-primary); color:#fff;
+      border-radius:var(--radius-xs); text-decoration:none; font-size:14px; font-weight:600; text-align:center; display:inline-block;
+    }
+    .product-reason{font-size:13px; color:#555; line-height:1.4}
+    .product-reason strong{color:var(--chat-secondary)}
+    .order-card{
+      border:1px solid var(--chat-border); border-radius:var(--radius-sm); padding:12px; background:#fff; color:var(--chat-text);
+      box-shadow:0 2px 6px rgba(0,0,0,.06); display:flex; flex-direction:column;
+    }
+    .order-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      border-bottom: 1px solid #f0f0f0;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    .order-header strong {
+      color: #333;
+      font-size: 15px;
+    }
+    .order-header .order-status {
+      background-color: #e8f6ee;
+      color: #007b00;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .order-info {
+      margin-bottom: 10px;
+    }
+    .order-info div {
+      margin: 3px 0;
+    }
+    .order-info strong {
+      color: #444;
+    }
+    .category-card{
+      border:1px solid var(--chat-border); border-radius:var(--radius-sm); padding:12px; background:#fff; color:var(--chat-text);
+      box-shadow:0 2px 6px rgba(0,0,0,.04); display:flex; flex-direction:column; gap:8px; margin-bottom:5px;
+    }
+    .category-header{display:flex; justify-content:space-between; align-items:center; gap:8px}
+    .category-name{font-weight:700; font-size:15px}
+    .category-buttons{display:flex; gap:8px; flex-wrap:wrap}
+    .category-button{padding:8px 10px; background:var(--chat-primary); color:#fff; border-radius:8px; text-decoration:none; font-weight:600}
+    .category-cta{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:18px; background:#fff; border-radius:8px}
+    .category-title{font-weight:800; font-size:18px; text-align:center}
+    .category-button-wrap{display:flex; justify-content:center}
+    .category-products-note{margin:8px 0 6px 0; font-size:14px; color:inherit; text-align:left}
+    .category-desc{margin-bottom:8px; text-align:left; color:inherit}
+    .timeline {
+      margin-top: 8px;
+    }
+    .timeline h3 {
+      font-size: 14px;
+      margin-bottom: 6px;
+      color: #333;
+    }
+    .timeline table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fafafa;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .timeline th {
+      background-color: #f3f3f3;
+      text-align: left;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 8px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .timeline td {
+      padding: 8px;
+      border-bottom: 1px solid #eee;
+      font-size: 13px;
+      color: #333;
+    }
+    .timeline tr:last-child td {
+      border-bottom: none;
+    }
+  `;
+
+  // === UTILS ===
+  function injectStyle(cssText) {
+    var s = document.createElement("style");
+    s.type = "text/css";
+    s.appendChild(document.createTextNode(cssText));
+    document.head.appendChild(s);
+  }
+  function setAppHeight() {
+    document.documentElement.style.setProperty("--app-height", window.innerHeight + "px");
+  }
+  function markdownToHTML(md) {
+    if (!md) return "";
+    return md
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
+      .replace(/^### (.*$)/gim, "<h3>$1</h3>")
+      .replace(/^## (.*$)/gim, "<h2>$1</h2>")
+      .replace(/^# (.*$)/gim, "<h1>$1</h1>")
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/^- (.*?)(?=\n|$)/gm, "<li>$1</li>")
+      .replace(/(?:\r\n|\r|\n)/g, "<br>");
+  }
+  function getChatId() {
+    try {
+      var sid = sessionStorage.getItem("chatId");
+      if (!sid) {
+        sid = "chat_" + Math.random().toString(36).slice(2, 11);
+        sessionStorage.setItem("chatId", sid);
+      }
+      return sid;
+    } catch (e) {
+      return "chat_" + Math.random().toString(36).slice(2, 11);
+    }
+  }
+
+  // === DOM ===
+  function buildDOM() {
+    var container = document.createElement("div");
+    container.className = "cw-root";
+    container.innerHTML = `
+      <div id="chat-widget-bubble" aria-label="Otwórz czat">${ChatWidgetConfig.uiText.bubble}</div>
+      <button id="chat-widget-button" aria-label="${ChatWidgetConfig.uiText.btnOpenAria}">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 4h16v12H5.17L4 17.17V4z" stroke="white" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <div id="chat-widget-container" class="cw-reset">
+        <div id="chat-widget-header" class="cw-reset">
+          <span>${ChatWidgetConfig.uiText.header}</span>
+          <button id="chat-widget-close-button" aria-label="${ChatWidgetConfig.uiText.btnCloseAria}" title="${ChatWidgetConfig.uiText.btnCloseAria}">×</button>
+        </div>
+        <div id="chat-widget-body" class="cw-reset">
+          <div class="bot-message">${ChatWidgetConfig.uiText.welcome}</div>
+        </div>
+        <div id="chat-widget-footer" class="cw-reset">
+          <input type="text" id="chat-widget-input" placeholder="${ChatWidgetConfig.uiText.inputPlaceholder}" />
+          <button id="chat-widget-send">${ChatWidgetConfig.uiText.btnSend}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(container);
+  }
+
+  // === LOGIKA ===
+  function init() {
+    injectStyle(css);
+    setAppHeight();
+    window.addEventListener("resize", setAppHeight);
+    buildDOM();
+
+    var chatButton = document.getElementById("chat-widget-button");
+    var chatContainer = document.getElementById("chat-widget-container");
+    var closeButton = document.getElementById("chat-widget-close-button");
+    var chatBubble = document.getElementById("chat-widget-bubble");
+    var sendButton = document.getElementById("chat-widget-send");
+    var inputField = document.getElementById("chat-widget-input");
+    var chatBody = document.getElementById("chat-widget-body");
+    var chatHeader = document.getElementById("chat-widget-header");
+
+    chatHeader.style.backgroundColor = ChatWidgetConfig.style.primaryColor;
+    sendButton.style.backgroundColor = ChatWidgetConfig.style.primaryColor;
+    chatContainer.style.backgroundColor = ChatWidgetConfig.style.backgroundColor;
+    chatBody.style.color = ChatWidgetConfig.style.fontColor;
+
+    function openChat(){
+      chatContainer.classList.add("mobile-fullscreen");
+      chatContainer.style.display = "flex";
+      chatButton.style.display = "none";
+      if (chatBubble) chatBubble.style.display = "none";
+    }
+
+    function closeChat(){
+      chatContainer.style.display = "none";
+      chatButton.style.display = "flex";
+      if (chatBubble) chatBubble.style.display = "flex";
+    }
+
+    // domyślnie: czat zamknięty -> pokaż dymek
+    if (chatBubble) chatBubble.style.display = "flex";
+
+    chatButton.addEventListener("click", openChat);
+    if (chatBubble) chatBubble.addEventListener("click", openChat);
+    closeButton.addEventListener("click", closeChat);
+
+    function appendTyping() {
+      var t = document.createElement("div");
+      t.className = "typing-indicator";
+      t.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+      chatBody.appendChild(t);
+      chatBody.scrollTop = chatBody.scrollHeight;
+      return t;
+    }
+
+    function sendMessage() {
+      var messageText = (inputField.value || "").trim();
+      if (!messageText) return;
+
+      var userMessage = document.createElement("div");
+      userMessage.className = "user-message";
+      userMessage.textContent = messageText;
+      chatBody.appendChild(userMessage);
+      chatBody.scrollTop = chatBody.scrollHeight;
+
+      // helper: scroll so user message is visible and bot response appears below it
+      function showUserAndBot() {
+        try {
+          var maxScroll = chatBody.scrollHeight - chatBody.clientHeight;
+          var target = (typeof userMessage.offsetTop === 'number') ? userMessage.offsetTop - 10 : chatBody.scrollHeight;
+          if (target < 0) target = 0;
+          if (target > maxScroll) target = maxScroll;
+          chatBody.scrollTop = target;
+        } catch (e) {
+          chatBody.scrollTop = chatBody.scrollHeight;
+        }
+      }
+
+      var typing = appendTyping();
+      var chatId = getChatId();
+
+      fetch(ChatWidgetConfig.webhook.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId: chatId, message: messageText, route: ChatWidgetConfig.webhook.route })
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        try { typing.remove(); } catch(e){}
+
+        var rawText = (data && data[0] && data[0].output)
+          ? data[0].output
+          : "Przepraszam, nie mogę odpowiedzieć. Spróbuj ponownie.";
+
+        var jsonBlock = null;
+        var preText = "";   // tekst przed JSON (opis)
+        var postText = "";  // tekst po JSON (follow-up pytania / doprecyzowanie)
+
+        // Spróbuj złapać JSON: najpierw ```json```, potem "goły" JSON wycięty po nawiasach klamrowych
+        try {
+          var fencedMatch = /```json\s*([\s\S]*?)```/i.exec(rawText);
+          if (fencedMatch) {
+            jsonBlock = JSON.parse((fencedMatch[1] || "").trim());
+            preText = rawText.slice(0, fencedMatch.index).trim();
+            postText = rawText.slice(fencedMatch.index + fencedMatch[0].length).trim();
+          } else {
+            // Wytnij poprawny JSON obiekt z tekstu nawet jeśli po nim jest dalszy tekst
+            var start = rawText.indexOf("{");
+            if (start !== -1) {
+              var depth = 0;
+              var inString = false;
+              var esc = false;
+              var end = -1;
+
+              for (var i = start; i < rawText.length; i++) {
+                var ch = rawText[i];
+
+                if (inString) {
+                  if (esc) {
+                    esc = false;
+                  } else if (ch === "\\") {
+                    esc = true;
+                  } else if (ch === '"') {
+                    inString = false;
+                  }
+                  continue;
+                }
+
+                if (ch === '"') {
+                  inString = true;
+                  continue;
+                }
+
+                if (ch === "{") depth++;
+                if (ch === "}") {
+                  depth--;
+                  if (depth === 0) {
+                    end = i;
+                    break;
+                  }
+                }
+              }
+
+              if (end !== -1) {
+                var jsonStr = rawText.slice(start, end + 1).trim();
+                jsonBlock = JSON.parse(jsonStr);
+                preText = rawText.slice(0, start).trim();
+                postText = rawText.slice(end + 1).trim();
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Brak poprawnego JSON w odpowiedzi:", e);
+          jsonBlock = null;
+          preText = "";
+          postText = "";
+        }
+
+        var botContainer = document.createElement("div");
+        botContainer.className = "bot-message";
+
+        if (jsonBlock && jsonBlock.type === "product_list" && Array.isArray(jsonBlock.products)) {
+          if (preText) {
+            var desc = document.createElement("div");
+            desc.innerHTML = markdownToHTML(preText);
+            desc.style.marginBottom = "8px";
+            botContainer.appendChild(desc);
+          }
+          jsonBlock.products.forEach(function (p) {
+            var card = document.createElement("div");
+            card.className = "product-card";
+            var buttonsHtml = '';
+            if (Array.isArray(p.buttons)) {
+              buttonsHtml = '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' + p.buttons.map(function(b){
+                var href = (b && b.url) ? b.url : (p.link||"#");
+                var label = (b && b.label) ? b.label : ChatWidgetConfig.uiText.btnProduct;
+                return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="product-button">${label}</a>`;
+              }).join('') + '</div>';
+            } else {
+              buttonsHtml = `<a href="${(p.link||"#")}" target="_blank" rel="noopener noreferrer" class="product-button">${ChatWidgetConfig.uiText.btnProduct}</a>`;
+            }
+            var shortDesc = (p.description||"");
+            if (shortDesc.length > 100) shortDesc = shortDesc.slice(0,100).trim() + '…';
+            card.innerHTML = `
+              <div class="product-top">
+                <img src="${(p.image||"")}" alt="${(p.title||"")}" class="product-image" />
+                <div class="product-info">
+                  <div class="product-title">${(p.title||"")}</div>
+                  <div class="product-price">${(p.price||"")}</div>
+                  ${buttonsHtml}
+                </div>
+              </div>
+              ${shortDesc ? `<div class="product-reason"><strong>${ChatWidgetConfig.uiText.reasonLabel}</strong> ${shortDesc}</div>` : ""}
+            `;
+            botContainer.appendChild(card);
+          });
+          if (postText) {
+            var follow = document.createElement("div");
+            follow.innerHTML = markdownToHTML(postText);
+            follow.style.marginTop = "8px";
+            botContainer.appendChild(follow);
+          }
+        } else if (jsonBlock && jsonBlock.type === "category" && (Array.isArray(jsonBlock.detalis) || Array.isArray(jsonBlock.details) || Array.isArray(jsonBlock.products))) {
+          if (preText) {
+            var cdesc = document.createElement("div");
+            cdesc.className = 'category-desc';
+            cdesc.innerHTML = markdownToHTML(preText);
+            botContainer.appendChild(cdesc);
+          }
+          // support both misspelled "detalis" and "details"
+          var detailsArr = Array.isArray(jsonBlock.detalis) ? jsonBlock.detalis : (Array.isArray(jsonBlock.details) ? jsonBlock.details : []);
+          detailsArr.forEach(function(d){
+            var catCard = document.createElement('div');
+            catCard.className = 'category-card';
+            var nameHtml = d && d.name ? d.name : '';
+            // build a single "Zobacz więcej" button: prefer a button from d.buttons with that label, otherwise use d.link
+            var moreBtnHtml = '';
+            if (Array.isArray(d.buttons)) {
+              var found = d.buttons.find(function(b){ return (b && (b.label||'').toString().toLowerCase().trim()) === 'zobacz więcej'; });
+              if (found) {
+                moreBtnHtml = `<a href="${(found.url||d.link||'#')}" target="_blank" rel="noopener noreferrer" class="category-button">Zobacz więcej</a>`;
+              }
+            }
+            if (!moreBtnHtml && d && d.link) {
+              moreBtnHtml = `<a href="${d.link}" target="_blank" rel="noopener noreferrer" class="category-button">Zobacz więcej</a>`;
+            }
+            var btnWrap = moreBtnHtml ? `<div class="category-button-wrap">${moreBtnHtml}</div>` : '';
+            catCard.innerHTML = `
+              <div class="category-cta">
+                <div class="category-title">Sprawdź kategorię ${nameHtml}</div>
+                ${btnWrap}
+              </div>
+            `;
+            botContainer.appendChild(catCard);
+          });
+          // insert note between category card and products
+          if (Array.isArray(jsonBlock.products) && jsonBlock.products.length) {
+            var note = document.createElement('div');
+            note.className = 'category-products-note';
+            note.textContent = 'A tutaj kilka przykładowych produktów z tej kategorii:';
+            botContainer.appendChild(note);
+          }
+          // render products if present
+          if (Array.isArray(jsonBlock.products)) {
+            jsonBlock.products.forEach(function (p) {
+              var card = document.createElement("div");
+              card.className = "product-card";
+              var buttonsHtml = '';
+              if (Array.isArray(p.buttons)) {
+                buttonsHtml = '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' + p.buttons.map(function(b){
+                  var href = (b && b.url) ? b.url : (p.link||"#");
+                  var label = (b && b.label) ? b.label : ChatWidgetConfig.uiText.btnProduct;
+                  return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="product-button">${label}</a>`;
+                }).join('') + '</div>';
+              } else {
+                buttonsHtml = `<a href="${(p.link||"#")}" target="_blank" rel="noopener noreferrer" class="product-button">${ChatWidgetConfig.uiText.btnProduct}</a>`;
+              }
+              var shortDesc = (p.description||"");
+              if (shortDesc.length > 100) shortDesc = shortDesc.slice(0,100).trim() + '…';
+              card.innerHTML = `
+                <div class="product-top">
+                  <img src="${(p.image||"")}" alt="${(p.title||"")}" class="product-image" />
+                  <div class="product-info">
+                    <div class="product-title">${(p.title||"")}</div>
+                    <div class="product-price">${(p.price||"")}</div>
+                    ${buttonsHtml}
+                  </div>
+                </div>
+              `;
+              botContainer.appendChild(card);
+            });
+          }
+          if (postText) {
+            var follow = document.createElement("div");
+            follow.innerHTML = markdownToHTML(postText);
+            follow.style.marginTop = "8px";
+            botContainer.appendChild(follow);
+          }
+        } else if (jsonBlock && jsonBlock.type === "order_status" && Array.isArray(jsonBlock.order_info)) {
+          if (preText) {
+            var desc2 = document.createElement("div");
+            desc2.innerHTML = markdownToHTML(preText);
+            desc2.style.marginBottom = "8px";
+            botContainer.appendChild(desc2);
+          }
+          jsonBlock.order_info.forEach(function (p) {
+            var card2 = document.createElement("div");
+            card2.className = "order-card";
+            card2.innerHTML = `
+              <div class="order-header">
+                <div><strong>Numer zamówienia:</strong> ${(p.order_number||"")}</div>
+                <div class="order-status"><strong>Status: </strong>${(p.status||"")}</div>
+              </div>
+              <div class="order-info">
+                <div><strong>Data utworzenia:</strong> ${(p.created_at ? new Date(p.created_at).toLocaleString('pl-PL') : "")}</div>
+                <div><strong>Kontakt:</strong> ${(p.contact && p.contact.name)||""}</div>
+                <div><strong>E-mail:</strong> ${(p.contact && p.contact.email)||""}</div>
+                <div><strong>Telefon:</strong> ${(p.contact && p.contact.phone)||""}</div>
+              </div>
+              <div class="timeline">
+                <h3>Historia zamówienia:</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Etap</th>
+                      <th>Data</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${(Array.isArray(p.timeline) ? p.timeline : []).map(function(item) {
+                      return `
+                        <tr>
+                          <td>${item.label||""}</td>
+                          <td>${item.at ? new Date(item.at).toLocaleString('pl-PL') : ""}</td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `;
+            botContainer.appendChild(card2);
+          });
+          if (postText) {
+            var follow = document.createElement("div");
+            follow.innerHTML = markdownToHTML(postText);
+            follow.style.marginTop = "8px";
+            botContainer.appendChild(follow);
+          }
+        } else {
+          if (/<a\s+href=/i.test(rawText)) botContainer.innerHTML = rawText;
+          else botContainer.innerHTML = markdownToHTML(rawText);
+        }
+
+        chatBody.appendChild(botContainer);
+        if (typeof showUserAndBot === 'function') showUserAndBot();
+      })
+      .catch(function (err) {
+        try { typing.remove(); } catch(e){}
+        console.error("Chat widget error:", err);
+        var errorMessage = document.createElement("div");
+        errorMessage.className = "bot-message";
+        errorMessage.textContent = "Wystąpił błąd. Spróbuj ponownie.";
+        chatBody.appendChild(errorMessage);
+        if (typeof showUserAndBot === 'function') showUserAndBot();
+      });
+
+      inputField.value = "";
+    }
+
+    sendButton.addEventListener("click", sendMessage);
+    inputField.addEventListener("keypress", function (e) { if (e.key === "Enter") sendMessage(); });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+</script>
